@@ -1,0 +1,494 @@
+<template>
+  <ion-page>
+    <ion-header>
+      <ion-toolbar>
+        <ion-title v-if="!isEdit">Add Account</ion-title>
+        <ion-title v-else>Edit Account</ion-title>
+      </ion-toolbar>
+    </ion-header>
+
+    <ion-content class="ion-padding">
+      <ion-item>
+        <ion-input label="Name" labelPlacement="stacked" v-model="name"></ion-input>
+      </ion-item>
+      <ion-item>
+        <ion-label>Get Random Name</ion-label>
+        <ion-button @click="getRandomName">Generate</ion-button>
+      </ion-item>
+      <ion-item v-if="!isEdit">
+        <ion-icon
+          style="margin-right: 0.5rem; cursor: pointer"
+          @click="paste('pastePk')"
+          :icon="clipboardOutline"
+          button
+        />
+        <ion-input
+          label="PK"
+          labelPlacement="stacked"
+          id="pastePk"
+          v-model="pk"
+        ></ion-input>
+      </ion-item>
+      <template v-if="!isEdit">
+        <ion-item>
+          <ion-label>Get Random PK</ion-label>
+          <ion-button @click="generateRandomPk">Generate</ion-button>
+        </ion-item>
+        <!-- NEW: Generate wallet with mnemonic -->
+        <ion-item>
+          <ion-button @click="generateWalletWithMnemonic" expand="full" color="success">
+            Create New Wallet (Generate Mnemonic)
+          </ion-button>
+        </ion-item>
+        <ion-item>
+          <ion-button @click="mnemonicModal = true" expand="full">
+            Extract From A Mnemonic
+          </ion-button>
+        </ion-item>
+      </template>
+      <ion-item>
+        <ion-button @click="onCancel">Cancel</ion-button>
+        <ion-button
+          @click="
+            () => {
+              isEdit ? onEditAccount() : onAddAccount();
+            }
+          "
+          expand="full"
+          color="primary"
+          >{{ isEdit ? "Edit Account" : "Add Account" }}</ion-button
+        >
+      </ion-item>
+      <ion-alert
+        :is-open="alertOpen"
+        header="Error"
+        :message="alertMsg"
+        :buttons="['OK']"
+        @didDismiss="alertOpen = false"
+      ></ion-alert>
+
+      <!-- NEW: Show generated mnemonic modal -->
+      <ion-modal :is-open="showMnemonicModal" @didDismiss="closeMnemonicDisplay">
+        <ion-header>
+          <ion-toolbar>
+            <ion-title>Your Recovery Phrase</ion-title>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="ion-padding">
+          <div class="warning-box">
+            <ion-icon :icon="alertCircleOutline" color="warning"></ion-icon>
+            <p><strong>Important:</strong> Write down these 12 words in order and store them safely. This is the only way to recover your wallet!</p>
+          </div>
+          
+          <div class="mnemonic-grid">
+            <div v-for="(word, index) in generatedMnemonic.split(' ')" :key="index" class="mnemonic-word">
+              <span class="word-number">{{ index + 1 }}</span>
+              <span class="word">{{ word }}</span>
+            </div>
+          </div>
+          
+          <ion-item>
+            <ion-checkbox v-model="mnemonicConfirmed"></ion-checkbox>
+            <ion-label style="margin-left: 10px;">
+              I have safely stored my recovery phrase
+            </ion-label>
+          </ion-item>
+          
+          <ion-item>
+            <ion-button @click="closeMnemonicDisplay" color="light">Cancel</ion-button>
+            <ion-button 
+              @click="confirmMnemonicAndAddAccount" 
+              :disabled="!mnemonicConfirmed"
+              expand="full" 
+              color="primary"
+            >
+              Continue & Add Account
+            </ion-button>
+          </ion-item>
+        </ion-content>
+      </ion-modal>
+
+      <ion-modal :is-open="mnemonicModal" @didDismiss="mnemonic = ''">
+        <ion-header>
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-button @click="mnemonicModal = false">Close</ion-button>
+            </ion-buttons>
+            <ion-title>Extract PK from mnemonic</ion-title>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="ion-padding">
+          <ion-item>
+            <ion-label>Enter mnemonic</ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-textarea
+              style="overflow-y: scroll; width: 100%"
+              aria-label="Enter mnemonic"
+              :rows="10"
+              :cols="10"
+              v-model="mnemonic"
+            ></ion-textarea>
+          </ion-item>
+          <ion-item>
+            <ion-label>Enter Index (default: 0)</ion-label>
+          </ion-item>
+          <ion-item>
+            <ion-input aria-label="mnemonic index" v-model="mnemonicIndex"></ion-input>
+          </ion-item>
+          <ion-item>
+            <ion-button @click="mnemonicModal = false" color="light">Close</ion-button>
+            <ion-button @click="extractMnemonic">Extract</ion-button>
+          </ion-item>
+        </ion-content>
+      </ion-modal>
+    </ion-content>
+  </ion-page>
+</template>
+
+<script lang="ts" setup>
+import { ref } from "vue";
+import {
+  IonContent,
+  IonHeader,
+  IonPage,
+  IonTitle,
+  IonToolbar,
+  IonItem,
+  IonLabel,
+  IonInput,
+  IonButton,
+  IonAlert,
+  IonIcon,
+  onIonViewWillEnter,
+  modalController,
+  IonModal,
+  IonButtons,
+  IonTextarea,
+  IonCheckbox,
+} from "@ionic/vue";
+import { ethers } from "ethers";
+import * as bip39 from "bip39"; // NEW: Import bip39
+import {
+  saveSelectedAccount,
+  getAccounts,
+  saveAccount,
+  smallRandomString,
+  paste,
+  getSettings,
+  replaceAccounts,
+} from "@/utils/platform";
+import router from "@/router";
+import { useRoute } from "vue-router";
+import type { Account, Settings } from "@/extension/types";
+import UnlockModal from "@/views/UnlockModal.vue";
+import { encrypt, getCryptoParams } from "@/utils/webCrypto";
+
+import { clipboardOutline, warningOutline, alertCircleOutline } from "ionicons/icons";
+import { getFromMnemonic, getRandomPk } from "@/utils/wallet";
+import { setUnlockModalState } from "@/utils/unlockStore";
+
+const name = ref("");
+const pk = ref("");
+const alertOpen = ref(false);
+const alertMsg = ref("");
+const errorMsg = ref('');
+const route = useRoute();
+const isEdit = route.path.includes("/edit");
+const paramAddress = route.params.address ?? "";
+const mnemonicModal = ref(false);
+const mnemonic = ref("");
+const mnemonicIndex = ref(0);
+
+// NEW: Mnemonic generation states
+const showMnemonicModal = ref(false);
+const generatedMnemonic = ref("");
+const mnemonicConfirmed = ref(false);
+
+let accountsProm: Promise<Account[] | undefined>;
+let settingsProm: Promise<Settings | undefined>;
+
+const resetFields = () => {
+  name.value = "";
+  pk.value = "";
+  // NEW: Reset mnemonic fields
+  generatedMnemonic.value = "";
+  mnemonicConfirmed.value = false;
+};
+
+const openModal = async () => {
+  const modal = await modalController.create({
+    component: UnlockModal,
+    animated: true,
+    focusTrap: false,
+    backdropDismiss: false,
+    componentProps: {
+      unlockType: "addAccount",
+    },
+  });
+  await modal.present();
+  setUnlockModalState(true);
+  const { role, data } = await modal.onWillDismiss();
+  if (role === "confirm") return data;
+  setUnlockModalState(false);
+  return false;
+};
+
+onIonViewWillEnter(async () => {
+  if (isEdit && paramAddress) {
+    accountsProm = getAccounts();
+    settingsProm = getSettings();
+    const accounts = (await accountsProm) as Account[];
+    const acc = accounts.find((account) => account.address === paramAddress);
+    if (acc) {
+      name.value = acc.name;
+    }
+  }
+});
+
+const deleteAccount = async (address: string, accounts: Account[]) => {
+  const findIndex = accounts.findIndex((a) => a.address === address);
+  const pArr: Array<Promise<void>> = [];
+  if (findIndex !== -1) {
+    accounts.splice(findIndex, 1);
+    pArr.push(replaceAccounts([...accounts]));
+  }
+  await Promise.all(pArr);
+};
+
+// NEW: Generate wallet with mnemonic
+const generateWalletWithMnemonic = () => {
+  console.log('Generate wallet button clicked'); // DEBUG
+  try {
+    // Generate 12-word mnemonic
+    generatedMnemonic.value = bip39.generateMnemonic();
+    console.log('Generated mnemonic:', generatedMnemonic.value); // DEBUG
+    
+    // Generate random name if empty
+    if (!name.value.trim()) {
+      name.value = smallRandomString();
+      console.log('Generated name:', name.value); // DEBUG
+    }
+    
+    // Show mnemonic modal
+    console.log('Opening mnemonic modal'); // DEBUG
+    showMnemonicModal.value = true;
+  } catch (err) {
+    console.error('Error generating wallet:', err); // DEBUG
+    errorMsg.value = (err as any).message || 'Failed to generate wallet';
+  }
+};
+
+// NEW: Close mnemonic display
+const closeMnemonicDisplay = () => {
+  showMnemonicModal.value = false;
+  generatedMnemonic.value = "";
+  mnemonicConfirmed.value = false;
+};
+
+// NEW: Confirm mnemonic and proceed
+const confirmMnemonicAndAddAccount = () => {
+  if (!mnemonicConfirmed.value) return;
+  
+  // Extract private key from mnemonic (index 0)
+  const wallet = ethers.Wallet.fromPhrase(generatedMnemonic.value);
+  pk.value = wallet.privateKey;
+  
+  // Close modal and proceed with account creation
+  showMnemonicModal.value = false;
+  onAddAccount();
+};
+
+const onEditAccount = async () => {
+  if (name.value.length < 1) {
+    alertMsg.value = "Name cannot be empty.";
+    alertOpen.value = true;
+    return;
+  }
+  const accounts = (await accountsProm) as Account[];
+  const account = accounts.find((acc) => acc.address === paramAddress);
+  if (!account) {
+    alertMsg.value = "Account not found.";
+    alertOpen.value = true;
+    return;
+  }
+  const savedAcc = {
+    address: account.address,
+    name: name.value,
+    pk: account.pk,
+    encPk: account.encPk,
+  };
+  await deleteAccount(account.address, accounts);
+
+  await saveAccount(savedAcc);
+  router.push("/tabs/accounts");
+};
+
+const onAddAccount = async () => {
+  let p1 = Promise.resolve();
+  if (name.value.length < 1) {
+    alertMsg.value = "Name cannot be empty.";
+    alertOpen.value = true;
+    return;
+  }
+  if (pk.value.length === 64) {
+    pk.value = `0x${pk.value.trim()}`;
+  }
+  if (pk.value.length !== 66) {
+    alertMsg.value = "Provided private key is invalid.";
+    alertOpen.value = true;
+    return;
+  }
+
+  const wallet = new ethers.Wallet(pk.value);
+  if (!accountsProm) {
+    accountsProm = getAccounts();
+  }
+  if (!settingsProm) {
+    settingsProm = getSettings();
+  }
+  const accounts = (await accountsProm) as Account[];
+  const settings = (await settingsProm) as Settings;
+  if (settings.enableStorageEnctyption) {
+    const pass = await openModal();
+    if (!pass) {
+      alertMsg.value = "Cannot add account without encryption password.";
+      alertOpen.value = true;
+      return;
+    }
+    const cryptoParams = await getCryptoParams(pass);
+    if ((accounts.length ?? 0) < 1) {
+      p1 = saveSelectedAccount({
+        address: wallet.address,
+        name: name.value,
+        pk: pk.value,
+        encPk: await encrypt(pk.value, cryptoParams),
+      });
+    } else {
+      if (accounts.find((account) => account.address === wallet.address)) {
+        alertMsg.value = "Account already exists.";
+        alertOpen.value = true;
+        return;
+      }
+    }
+    const p2 = saveAccount({
+      address: wallet.address,
+      name: name.value,
+      pk: pk.value,
+      encPk: await encrypt(pk.value, cryptoParams),
+    });
+    await Promise.all([p1, p2]);
+  } else {
+    if ((accounts.length ?? 0) < 1) {
+      p1 = saveSelectedAccount({
+        address: wallet.address,
+        name: name.value,
+        pk: pk.value,
+        encPk: "",
+      });
+    } else {
+      if (accounts.find((account) => account.address === wallet.address)) {
+        alertMsg.value = "Account already exists.";
+        alertOpen.value = true;
+        return;
+      }
+    }
+    const p2 = saveAccount({
+      address: wallet.address,
+      name: name.value,
+      pk: pk.value,
+      encPk: "",
+    });
+    await Promise.all([p1, p2]);
+  }
+  if (isEdit) {
+    router.push("/tabs/accounts");
+  } else {
+    router.push("/tabs/home");
+  }
+  resetFields();
+};
+
+const generateRandomPk = () => {
+  pk.value = getRandomPk();
+};
+
+const getRandomName = () => {
+  name.value = smallRandomString();
+};
+
+const onCancel = () => {
+  if (isEdit) {
+    router.push("/tabs/accounts");
+  } else {
+    router.push("/tabs/home");
+  }
+};
+
+const extractMnemonic = () => {
+  mnemonic.value = mnemonic.value.trim().replace(/\s+/g, " ");
+  mnemonicIndex.value = Number(mnemonicIndex.value);
+  const wordCount = mnemonic.value.trim().split(" ").length;
+
+  if (wordCount !== 12 && wordCount !== 24) {
+    alertMsg.value = "Invalid mnemonic.";
+    alertOpen.value = true;
+    return;
+  }
+  if (mnemonicIndex.value < 0) {
+    alertMsg.value = "Invalid index.";
+    alertOpen.value = true;
+    return;
+  }
+  pk.value = getFromMnemonic(mnemonic.value, mnemonicIndex.value);
+  mnemonicModal.value = false;
+};
+</script>
+
+<style scoped>
+.warning-box {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.warning-box ion-icon {
+  margin-right: 10px;
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mnemonic-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.mnemonic-word {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+}
+
+.word-number {
+  font-size: 12px;
+  color: #6c757d;
+  margin-right: 8px;
+  min-width: 15px;
+}
+
+.word {
+  font-family: monospace;
+  font-weight: 500;
+}
+</style>
