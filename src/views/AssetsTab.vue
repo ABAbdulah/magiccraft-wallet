@@ -27,7 +27,10 @@
           >Assets for: {{ selectedAccount?.name }}</ion-label
         >
       </ion-item>
-      <ion-item button @click="copyText(selectedAccount?.address, getToastRef())">
+      <ion-item
+        button
+        @click="copyText(selectedAccount?.address, getToastRef())"
+      >
         <p style="font-size: 0.7rem">{{ selectedAccount?.address }}</p>
         <ion-icon style="margin-left: 0.5rem" :icon="copyOutline"></ion-icon>
       </ion-item>
@@ -70,7 +73,9 @@
         conectivity issues.
       </template>
       <template v-else-if="noAssets">
-        <p class="padding: 1rem;">No know assets found for this wallet address.</p>
+        <p class="padding: 1rem;">
+          No know assets found for this wallet address.
+        </p>
       </template>
       <template v-else>
         <ion-list>
@@ -79,7 +84,9 @@
           </ion-item>
           <ion-list>
             <ion-item v-for="token of shownTokens" :key="token.token.address">
-              <ion-avatar style="margin-right: 1rem; width: 1.6rem; height: 1.6rem">
+              <ion-avatar
+                style="margin-right: 1rem; width: 1.6rem; height: 1.6rem"
+              >
                 <img
                   v-if="token?.token?.project?.logoUrl"
                   :alt="token?.token?.name"
@@ -107,7 +114,9 @@
             </ion-item>
             <ion-item v-if="alltokens.length > shownTokens.length">
               <ion-button
-                @click="shownTokens = alltokens.slice(0, shownTokens.length + 10)"
+                @click="
+                  shownTokens = alltokens.slice(0, shownTokens.length + 10)
+                "
                 >Load More</ion-button
               >
             </ion-item>
@@ -136,7 +145,12 @@ import {
   IonLoading,
   IonIcon,
 } from "@ionic/vue";
-import { getSelectedAccount, copyText, getUrl, openTab } from "@/utils/platform";
+import {
+  getSelectedAccount,
+  copyText,
+  getUrl,
+  openTab,
+} from "@/utils/platform";
 import type { Account, UniSwapPortfolioResponse } from "@/extension/types";
 import { formatNumber } from "@/utils/wallet";
 import ArrowDown from "@/components/icons/ArrowDown.vue";
@@ -238,7 +252,8 @@ onIonViewWillEnter(async () => {
     );
     shownTokens.value = alltokens.value.slice(0, 10);
     assetsValue.value = result.data.portfolios[0].tokensTotalDenominatedValue;
-    assetsChange.value = result.data.portfolios[0].tokensTotalDenominatedValueChange;
+    assetsChange.value =
+      result.data.portfolios[0].tokensTotalDenominatedValueChange;
   } else {
     noAssets.value = true;
   }
@@ -260,7 +275,7 @@ onIonViewWillEnter(async () => {
   font-weight: 500;
   text-align: center;
   color: #fff;
-  background-color: #312e81;
+  background-color: #f1c40f;
   padding-right: 1rem;
   padding-left: 1rem;
   box-shadow: 0 1px 3px #0000001a, 0 1px 2px #0000000f;

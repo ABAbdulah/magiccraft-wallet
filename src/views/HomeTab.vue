@@ -178,21 +178,6 @@
           >Personal Sign Messages</ion-button
         >
       </ion-item>
-      <ion-item style="margin-top: 0.3rem">
-        <div class="display: flex; flex-direction: column">
-          <img
-            alt="stealthex"
-            @click="openTab('https://stealthex.io')"
-            id="exchange-btn"
-            :src="getUrl('assets/exchange-btn-min.svg')"
-            class="exchange-btn"
-            style=""
-          />
-          <p style="font-size: 0.75rem; opacity: 0.8; padding: 0.2rem">
-            This button does not contain any referral to maximize privacy.
-          </p>
-        </div>
-      </ion-item>
       <ion-loading
         :is-open="loading"
         cssClass="my-custom-class"
