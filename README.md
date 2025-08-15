@@ -1,5 +1,6 @@
 ### Build Instructions:
 npm install
+##
 npm install bip39 @types/bip39 crypto-js @types/crypto-js
 
 ## Main Build
